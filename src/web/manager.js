@@ -24,6 +24,7 @@ export const MESSAGES = {
   conflict: 'The app list was changed elsewhere and has been reloaded. Please repeat your change.',
   forbidden: 'You do not have permission to change the app list.',
   full: `At most ${MAX_ENTRIES} apps are allowed.`,
+  notReopened: 'could not reopen with the new settings; they apply the next time it opens',
   titleBarNotSaved: 'The title bar setting could not be saved on this device.',
   titleBarNotApplied: 'The title bar setting is saved; it applies the next time the window opens.'
 }
@@ -257,6 +258,21 @@ export function createManager({ client, api, hostName = null, embedded = false, 
     }
   }
 
+  /**
+   * Close an entry's window so it can be reopened with new settings. Returns
+   * false when the close failed and the window may still be on screen:
+   * reopening then would leave two windows, one of them untracked.
+   */
+  async function closeForReopen(entryId) {
+    try {
+      await client.windows.close(winOf(entryId).windowId)
+    } catch (err) {
+      if (reasonOf(err) !== 'windows.unknownId') return false
+    }
+    s.win.delete(entryId)
+    return true
+  }
+
   async function bringUp(entry) {
     const w = winOf(entry.id)
     if (w.status === 'open' && w.windowId) {
@@ -313,14 +329,9 @@ export function createManager({ client, api, hostName = null, embedded = false, 
     const w = winOf(entry.id)
     if (w.windowId && (w.status === 'open' || w.status === 'hidden')) {
       const visible = w.status === 'open'
-      try {
-        await client.windows.close(w.windowId)
-      } catch (err) {
-        if (reasonOf(err) !== 'windows.unknownId') {
-          return { saved: true, reopened: false, error: MESSAGES.titleBarNotApplied }
-        }
+      if (!(await closeForReopen(entry.id))) {
+        return { saved: true, reopened: false, error: MESSAGES.titleBarNotApplied }
       }
-      s.win.delete(entry.id)
       await openWindow(entry, { visible })
       return { saved: true, reopened: true }
     }
@@ -381,8 +392,8 @@ export function createManager({ client, api, hostName = null, embedded = false, 
         }
         if (!sameJson(old.source, now.source) || old.closeBehavior !== now.closeBehavior) {
           const visible = w.status === 'open'
-          await closeWindowOf(old.id)
-          await openWindow(now, { visible })
+          if (await closeForReopen(old.id)) await openWindow(now, { visible })
+          else setWin(old.id, { windowId: w.windowId, status: w.status, error: MESSAGES.notReopened })
         } else if (old.name !== now.name) {
           await client.windows.update({ windowId: w.windowId, title: now.name }).catch(() => {})
         }
@@ -550,8 +561,12 @@ export function createManager({ client, api, hostName = null, embedded = false, 
       changed()
     } else if (name === 'window.state') {
       const status = params.visible === false ? 'hidden' : 'open'
-      if (winOf(id).status !== status) {
-        setWin(id, { windowId: params.windowId, status })
+      const w = winOf(id)
+      if (w.status !== status) {
+        // The old window of a failed reopen is still the one on screen: its
+        // new settings still apply only once it closes.
+        const keep = w.error === MESSAGES.notReopened ? { error: w.error } : {}
+        setWin(id, { windowId: params.windowId, status, ...keep })
         changed()
       }
     }

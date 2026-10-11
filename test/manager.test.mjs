@@ -64,13 +64,13 @@ function fakeClient({ openApps = {}, titleBars, limit = Infinity } = {}) {
       },
       async close(id) {
         c.log.push(['close', id])
-        if (c.failClose) {
-          const e = new Error('close failed')
-          if (c.failClose === 'gone') e.data = { reason: 'windows.unknownId' }
-          else throw e
+        if (c.failClose === 'gone') {
           c.openWins.delete(id)
+          const e = new Error('unknown window')
+          e.data = { reason: 'windows.unknownId' }
           throw e
         }
+        if (c.failClose) throw new Error('close failed')
         c.openWins.delete(id)
       }
     },
@@ -509,6 +509,36 @@ test('hello is answered after startup has loaded the list', async () => {
   await m.idle()
   assert.ok(client.snapshots().length >= 1)
   assert.ok(client.snapshots().every((snap) => snap.entries.length === 1))
+})
+
+test('edits: no second window when the old one does not close for a reopen', async () => {
+  const a = entry('a', { startup: 'always' })
+  const { m, client } = await setup({ apps: [a, entry('b', { startup: 'always' })] })
+  const [w1, w2] = [...client.openWins.keys()]
+  client.failClose = 'error'
+  await send(m, client, T.saveEntry, { entry: { ...a, source: { type: 'url', url: 'https://x.y/' } } })
+  assert.strictEqual(client.ops('open').length, 2, 'not reopened')
+  assert.strictEqual(stateOf(client, 'a'), 'open', 'still tracks the old window')
+  assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
+  assert.ok(client.replies().at(-1).ok, 'the edit itself is saved')
+  // hiding or showing it from its own title bar keeps the warning
+  m.onWindowEvent('window.state', { windowId: w1, visible: false })
+  assert.strictEqual(stateOf(client, 'a'), 'hidden')
+  assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
+  m.onWindowEvent('window.state', { windowId: w1, visible: true })
+  assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
+  // the old window is still the one the launcher's Close acts on
+  client.failClose = false
+  await send(m, client, T.setOpen, { entryId: 'a', open: false })
+  assert.deepStrictEqual(client.ops('close').at(-1), w1)
+  assert.strictEqual(client.lastSnapshot().status.a.error, undefined, 'closing it clears the warning')
+
+  // the host no longer has it: reopen as usual
+  client.failClose = 'gone'
+  await send(m, client, T.saveEntry, { entry: { ...entry('b', { startup: 'always' }), closeBehavior: 'hide' } })
+  assert.strictEqual(client.ops('close').at(-1), w2)
+  assert.strictEqual(client.ops('open').at(-1).userClose, 'hide')
+  assert.strictEqual(stateOf(client, 'b'), 'open')
 })
 
 test('title bar: a per-device autoHide reaches openWindow and the snapshot (§4.10)', async () => {

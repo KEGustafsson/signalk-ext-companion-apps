@@ -281,7 +281,12 @@ break it.)
     `ui.updateWindow({ windowId, title })`; `source` or `closeBehavior`
     changed → close the window and reopen it with the new settings, keeping its
     visible/hidden state (a window's `params` and `userClose` cannot be changed
-    in place);
+    in place). Reopen only once the close succeeded or the host reports
+    `windows.unknownId`; on any other close failure keep tracking the old
+    window (it may still be on screen, and a second one would be untracked)
+    with the error "could not reopen with the new settings; they apply the
+    next time it opens", kept when the host reports that window hidden or
+    shown again, until it closes. The save itself still succeeds;
   - `showIn` changed `window` → `panel`: close its window; `panel` →
     `window`: if it is `panelApp`, set `panelApp = null` (the launcher);
   - side-panel entry: the next snapshot carries it; the side panel reloads
@@ -801,7 +806,8 @@ Window entries are not in the cycle: they are not shown in the side panel.
     true/false update status and `openApps`;
   - unknown `windowId` events ignored;
   - edits: name → `updateWindow` title; source / close behavior → close +
-    reopen preserving hidden state; `showIn` changes in both directions;
+    reopen preserving hidden state, but no reopen (and the old window kept)
+    when the close fails other than with `windows.unknownId`; `showIn` changes in both directions;
     deleting the current side-panel app returns `panelApp` to `null`; delete
     closes the window;
   - `needsReload` set for each kind of button change and cleared when the
