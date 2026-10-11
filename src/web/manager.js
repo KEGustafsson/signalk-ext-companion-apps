@@ -22,7 +22,8 @@ export const MESSAGES = {
   listLoad: 'The app list could not be loaded from the server. Retrying…',
   conflict: 'The app list was changed elsewhere and has been reloaded. Please repeat your change.',
   forbidden: 'You do not have permission to change the app list.',
-  full: `At most ${MAX_ENTRIES} apps are allowed.`
+  full: `At most ${MAX_ENTRIES} apps are allowed.`,
+  notReopened: 'could not reopen with the new settings; they apply the next time it opens'
 }
 
 /** An error the API layer throws for a non-2xx response. */
@@ -218,6 +219,21 @@ export function createManager({ client, api, hostName = null, embedded = false, 
     }
   }
 
+  /**
+   * Close an entry's window so it can be reopened with new settings. Returns
+   * false when the close failed and the window may still be on screen:
+   * reopening then would leave two windows, one of them untracked.
+   */
+  async function closeForReopen(entryId) {
+    try {
+      await client.windows.close(winOf(entryId).windowId)
+    } catch (err) {
+      if (reasonOf(err) !== 'windows.unknownId') return false
+    }
+    s.win.delete(entryId)
+    return true
+  }
+
   async function bringUp(entry) {
     const w = winOf(entry.id)
     if (w.status === 'open' && w.windowId) {
@@ -314,8 +330,8 @@ export function createManager({ client, api, hostName = null, embedded = false, 
         }
         if (!sameJson(old.source, now.source) || old.closeBehavior !== now.closeBehavior) {
           const visible = w.status === 'open'
-          await closeWindowOf(old.id)
-          await openWindow(now, { visible })
+          if (await closeForReopen(old.id)) await openWindow(now, { visible })
+          else setWin(old.id, { windowId: w.windowId, status: w.status, error: MESSAGES.notReopened })
         } else if (old.name !== now.name) {
           await client.windows.update({ windowId: w.windowId, title: now.name }).catch(() => {})
         }
