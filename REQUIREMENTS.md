@@ -284,7 +284,8 @@ break it.)
     `windows.unknownId`; on any other close failure keep tracking the old
     window (it may still be on screen, and a second one would be untracked)
     with the error "could not reopen with the new settings; they apply the
-    next time it opens". The save itself still succeeds;
+    next time it opens", kept when the host reports that window hidden or
+    shown again, until it closes. The save itself still succeeds;
   - `showIn` changed `window` → `panel`: close its window; `panel` →
     `window`: if it is `panelApp`, set `panelApp = null` (the launcher);
   - side-panel entry: the next snapshot carries it; the side panel reloads

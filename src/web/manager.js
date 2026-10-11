@@ -498,8 +498,12 @@ export function createManager({ client, api, hostName = null, embedded = false, 
       changed()
     } else if (name === 'window.state') {
       const status = params.visible === false ? 'hidden' : 'open'
-      if (winOf(id).status !== status) {
-        setWin(id, { windowId: params.windowId, status })
+      const w = winOf(id)
+      if (w.status !== status) {
+        // The old window of a failed reopen is still the one on screen: its
+        // new settings still apply only once it closes.
+        const keep = w.error === MESSAGES.notReopened ? { error: w.error } : {}
+        setWin(id, { windowId: params.windowId, status, ...keep })
         changed()
       }
     }

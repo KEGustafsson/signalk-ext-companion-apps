@@ -519,10 +519,17 @@ test('edits: no second window when the old one does not close for a reopen', asy
   assert.strictEqual(stateOf(client, 'a'), 'open', 'still tracks the old window')
   assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
   assert.ok(client.replies().at(-1).ok, 'the edit itself is saved')
+  // hiding or showing it from its own title bar keeps the warning
+  m.onWindowEvent('window.state', { windowId: w1, visible: false })
+  assert.strictEqual(stateOf(client, 'a'), 'hidden')
+  assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
+  m.onWindowEvent('window.state', { windowId: w1, visible: true })
+  assert.strictEqual(client.lastSnapshot().status.a.error, MESSAGES.notReopened)
   // the old window is still the one the launcher's Close acts on
   client.failClose = false
   await send(m, client, T.setOpen, { entryId: 'a', open: false })
   assert.deepStrictEqual(client.ops('close').at(-1), w1)
+  assert.strictEqual(client.lastSnapshot().status.a.error, undefined, 'closing it clears the warning')
 
   // the host no longer has it: reopen as usual
   client.failClose = 'gone'
