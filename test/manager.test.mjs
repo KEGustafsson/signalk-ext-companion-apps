@@ -24,7 +24,6 @@ function fakeClient({ openApps = {}, titleBars, limit = Infinity } = {}) {
     log: [],
     published: [],
     subs: [],
-    windows: new Map(),
     stateValues: { openApps, ...(titleBars ? { titleBars } : {}) },
     async publish(topic, params, scope) {
       c.published.push({ topic, params, scope })
